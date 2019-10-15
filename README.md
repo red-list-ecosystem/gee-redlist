@@ -21,7 +21,7 @@ var rleFunctions = require('users/murrnick/IUCN-RLE:Modules/rleFunctions');
 print('Time now:', rleFunctions.getTime); // call an RLE function
 ```
 
-## Contributers:
+## Contributors:
 
 * Nicholas Murray - James Cook University - [Website](https://www.murrayensis.org)
 * John Wilshire - Yale University
