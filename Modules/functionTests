@@ -1,0 +1,70 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.Polygon(
+        [[[96.90049099947396, 28.66344485978154],
+          [96.63681912447396, 28.185183529731013],
+          [97.71347928072396, 27.46620702497436],
+          [98.94340660274452, 27.72538824708764],
+          [97.93320584322396, 28.528398342301788],
+          [97.38422117062748, 28.654760045064048]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Import functions:
+var globFunctions = require('users/murrnick/IUCN-RLE:Modules/rleFunctions');
+
+// Make a study area
+print('total area: ', geometry.area().divide(1e6).format('%.2f'));
+Map.centerObject(geometry);
+
+//Make a fake binary ecosystem
+var elevation = ee.Image('USGS/SRTMGL1_003').clip(geometry);
+//Map.addLayer(elevation, {min:4500, max:7000, palette:'white, blue, red', opacity:0.5}, 'elevation');
+var classimg = ee.Image(1)
+                  .clip(geometry)
+                  .updateMask(elevation.gte(4500));
+Map.addLayer(classimg, null, 'fake ecosystem');
+
+
+// EOO
+// make EOO
+var eoo = globFunctions.makeEOO(classimg, geometry);
+Map.addLayer(eoo, {color:'darkred'}, 'EOO');
+var eooArea = globFunctions.eooArea(eoo);
+print ('EOO Area: ', eooArea);
+
+// AOO
+var aoo = globFunctions.makeAOO(classimg, geometry);
+Map.addLayer(aoo, null, 'aoo');
+print (globFunctions.aooCount(aoo));
+
+//AOO 1pc
+var aooArea = globFunctions.aooArea (aoo, classimg);
+print ('AOO:', aooArea);
+var aoo1pc = aooArea.filterMetadata('areakm2', 'greater_than', 1);
+Map.addLayer(aoo1pc, {color:'yellow'}, 'aoo1pc');
+print ('AOO 1pc:', aoo1pc);
+
+
+//Export for testing
+Export.table.toDrive({
+  collection: ee.FeatureCollection(aoo), //
+  description: 'exportaoo', 
+  fileNamePrefix: 'aoo',
+  fileFormat: 'shp'
+});
+  
+Export.table.toDrive({
+  collection: ee.FeatureCollection(aoo1pc), //
+  description: 'exportaoo1pc',
+  fileNamePrefix: 'aoo1pc',
+  fileFormat: 'shp'
+});
+
+Export.image.toDrive({
+  image: classimg,
+  description: 'exportclassimg',
+  fileNamePrefix: 'rleTest',
+  scale: 30,
+  region: geometry,
+  maxPixels: 800000000000
+});
+
+

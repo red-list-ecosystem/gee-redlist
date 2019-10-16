@@ -1,0 +1,359 @@
+// IUCN Red List of Functions
+// email: n.murray@unsw.edu.au
+
+// import by
+// var globFunctions = require('users/murrnick/wcsMyanmar:Modules/wcsFunctions');
+// print('Time now:',globFunctions.getTime);
+
+// 1. Landsat
+// Some general Landsat functions for applying to an image collection
+
+exports.applyCFMask = function(image) {
+	// Mask out SHADOW, SNOW, and CLOUD classes. SR data.
+	var clear = image.select('pixel_qa').bitwiseAnd(2).neq(0); // clear
+	var water = image.select('pixel_qa').bitwiseAnd(4).neq(0);
+	var finalMask = clear.add(water);
+	var img = image.updateMask(finalMask);
+	return img;
+};
+
+exports.applyNDWI = function(image) {
+	// apply NDWI to an image
+	var ndwi = image.normalizedDifference(['green','nir']);
+	return ndwi.select([0], ['ndwi']);
+};
+
+exports.applyMNDWI = function(image) {
+	// apply MNDWI to an image
+	var mndwi = image.normalizedDifference(['green','swir1']);
+	return image.select([0], ['mndwi']);
+};
+
+exports.applyAWEI = function(image) {
+	// apply AWEI to an image
+	var awei = image.expression("4*(b('green')-b('swir1'))-(0.25*b('nir')+2.75*b('swir2'))");
+	return awei.select([0], ['awei']);
+};
+
+exports.applyNDVI = function(image) {
+	// apply NDVI to an image
+	var ndvi = image.normalizedDifference(['nir','red']);
+	return ndvi.select([0], ['ndvi']);
+};
+
+
+
+exports.samplePredictors = function(feature) {
+  // sample a composite image of covariates for predictor data
+  var predictorData = trainComposite.reduceRegion({
+  reducer: ee.Reducer.first(), // mean and first return the same
+  geometry: feature.geometry(),
+  scale: 8}); //1m sample = 1 pixel
+  return feature.set(predictorData);
+ };
+
+exports.addGridID = function(feature, numericClassID) {
+  return feature.set({GridID:numericClassID, CLASS:feature.get('name')}); //
+};
+
+exports.getTime = ee.Date(Date.now());
+
+// RLE functions
+exports.makeEOO = function (classimg, geo){
+//Takes a binary image and returns its Extent of Occurence as a polygon
+    // if (classimg.geometry().isUnbounded()) { //added this for global images with no bounds
+    // var geo = geo } else {
+    //   var geo = classimg.geometry().buffer(10000).bounds();
+    //   print (geo.isUnbounded(), 'unbounded geo fixed');
+    //   };
+    var eooPoly = classimg.updateMask(1).reduceToVectors({
+      scale: 1,
+      geometry: geo,
+      geometryType: 'polygon',
+      bestEffort: true   // Best effort might make this less accurate
+    }).geometry()
+    .convexHull({maxError: 1});
+    return eooPoly;
+};
+
+exports.eooArea = function (eooPoly) {
+  //Takes an Extent of Occurence polygon and reports it's area
+    var eookm2 = eooPoly.area().divide(1e6).format('%.2f');
+      //'units': 'km2'
+    return eookm2;
+};
+
+
+
+exports.makeAOO = function(classimg, geo) {
+  // Creates a 10k grid from a binary image
+  // if (classimg.geometry().isUnbounded()) { //added this for global images with no bounds
+  //   var aoi = geo } else {
+  //     var aoi = classimg.geometry().buffer(100000).bounds();
+  //     print (geo.isUnbounded(), 'unbounded geo fixed');
+  //     };
+  
+  // get the correct reference system as centre of aoi
+  var aoi = geo;
+  var geo_centroid = geo.centroid().coordinates();
+  var geo_centroid_lon = geo_centroid.get(0);
+  var utm_swath = ee.Number(ee.Number(geo_centroid_lon).add(180).divide(6).int()).format();
+  var geo_centroid_lat = geo_centroid.get(1);
+  var north_or_south = ee.Algorithms.If(ee.Number(geo_centroid_lat).gte(0), ee.String('6'), ee.String('7'));
+  var crs_utm = ee.String('EPSG:32').cat(north_or_south).cat(utm_swath);
+  print('Selected UTM:', crs_utm);
+
+  var class_poly = classimg
+  .selfMask()
+  .reduceToVectors({
+    scale:1, 
+    geometry: aoi,
+    geometryType:'polygon',
+    bestEffort:true,
+    crs:crs_utm
+    });
+  var im = ee.Image.random()
+    .multiply(100000)
+    .ceil()
+    .int()
+    .clip(aoi);
+  // print('Projection, crs, and crs_transform:', im.projection());
+  // print('Scale in meters:', im.projection().nominalScale());
+  // Map.addLayer(im.addBands(ee.Image.pixelArea()).select(['area']).randomVisualizer())
+  var grid10k = im.reduceToVectors({
+    scale:10000,
+    geometryType:'polygon',
+    bestEffort:false,
+    geometry: aoi,
+    labelProperty:'gridID'
+    });
+  var occupiedAOO = grid10k.filterBounds(class_poly);
+  return occupiedAOO;
+};
+
+exports.aooCount = function (grid){
+  // Counts the number of cells in an AOO grid
+  var sizeAOO = grid.size();
+  return sizeAOO;
+};
+
+exports.aooArea = function (aooGrid, classimg){
+  //Takes an AOO grid and ecosystem image and reports the number of AOO cells >1km2
+  var getArea = function (feature){
+    var areaObject = classimg.addBands(ee.Image.pixelArea().divide(1000000))
+      .select('area')
+      .updateMask(classimg)
+      .reduceRegion({
+        reducer: ee.Reducer.sum(), 
+        geometry: feature.geometry(),    
+        scale: 30,
+        maxPixels:7e11,
+        tileScale:2 // setting tileScale causes more parellelisation
+        });
+    var newDict = { 
+    areakm2: areaObject.get('area')
+    };
+  return feature.set(newDict);
+  };
+  var aooArea = aooGrid.map(getArea);
+  return aooArea;
+};
+
+exports.aoo1pc = function(aooArea){
+  var aoo1pc = aooArea.filterMetadata('areakm2', 'greater_than', 1);
+  return aoo1pc;
+};
+
+// Area analysis
+exports.getArea = function (classimg,geo){
+  var classimgArea = classimg.addBands(ee.Image.pixelArea())
+    .select('area')
+    .updateMask(classimg);
+  var areaObject = classimgArea // 
+  .reduceRegion({
+    reducer: ee.Reducer.sum(), 
+    geometry: geo,
+    scale: 30,
+    maxPixels:7e11,
+    //bestEffort:true, // sometimes necessary for big zones: EEZ, country
+    tileScale:2 // setting tileScale causes more parellelisation
+  });
+  var areakm2 = ee.Number(areaObject.get('area')).divide(1000 * 1000)
+  return areakm2;
+};
+
+// Biophysical data summaries
+// Climate / Topographic Data
+var worldclim = ee.Image('WORLDCLIM/V1/BIO')
+    .select(['bio01',
+    'bio02',
+    'bio03',
+    'bio04',
+    'bio05',
+    'bio06',
+    'bio07',
+    'bio08',
+    'bio09',
+    'bio10',
+    'bio11',
+    'bio12',
+    'bio13',
+    'bio14',
+    'bio15',
+    'bio16',
+    'bio17',
+    'bio18',
+    'bio19',],
+    ['meanAnnualTemp', //1
+    'meanDiurnalTempRange', //2
+    'isothermality', //3
+    'tempSeasonality',//4
+    'maxTempWarmestMonth', //5
+    'minTempColdestMonth', //6
+    'tempAnnualRange', //7
+    'meanTempWettestQtr',//8
+    'meanTempDriestQtr',//9
+    'meanTempWarmestQtr', //10
+    'meanTempColdestQtr',//11
+    'annPrecipTotal',//12
+    'precipWettestMonth',//13
+    'precipDriestMonth',//14
+    'precipSeasonality', //15
+    'precipWettestQtr', //16
+    'precipDriestQtr', //17
+    'precipWarmestQtr', //18
+    'precipColdestQtr']); //19
+var terrain = ee.Terrain.products(ee.Image('JAXA/ALOS/AW3D30_V1_1').select(['AVE'], ['elevation']))
+var dryForestMonths = ee.ImageCollection('WORLDCLIM/V1/MONTHLY').map(function(image) { // wordclim climatology
+  return image.select('prec').lte(100).rename('nMonthsPreciplte100mm');
+});
+var numDryForest = dryForestMonths.sum();
+
+var bioPhysComposite = terrain
+    .addBands(worldclim)
+    .addBands(numDryForest)
+
+exports.bioPhysSampleSummary = function(classimg, geo, nPoints){
+  // returns a biophysical summary of a map class
+  // imports
+  var bioPhysComposite2 = bioPhysComposite
+    .clip(geo);
+  // sampling the class
+  print (bioPhysComposite2, 'biophysical layers');
+
+  var randomPoints = classimg
+  .sample({
+    numPixels: nPoints,
+    scale:  30,
+    region: geo,
+    dropNulls: true,
+    geometries:true
+  })
+  var bioPhysData = randomPoints.map(function(sample) {
+    var lat = sample.get('latitude');
+    var lon = sample.get('longitude');
+    var bioPhysData = bioPhysComposite2.reduceRegion({
+    reducer: ee.Reducer.first(), // mean and first return the same
+    geometry: sample.geometry(),
+    scale: 1}); //1m sample = 1 pixel 
+    return sample.set(bioPhysData);
+    });
+  return bioPhysData;
+};
+
+// Reduce the region. The region parameter is the Feature geometry.
+exports.bioPhysReductionSummary = function(classimg, geo){
+  var bioPhysComposite3 = bioPhysComposite
+    .clip(geo)
+    .mask(classimg);
+  var meanDictionary = bioPhysComposite3.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: geo,
+    scale: 30,
+    maxPixels: 7e11
+  });
+return meanDictionary;
+};
+
+// package for exports
+exports.rleData = function (eooArea, aooArea, aoo1pc, filename){
+ var out = ee.Feature(null).set({
+  'eoo': eooArea, 
+  'aooCount': aooArea.size(),
+  'aoo1pcCount': aoo1pc.size(),
+  'eooUnits': 'km2',
+  'fileName': filename
+ }) ;
+ return out;
+};
+
+// package for exports
+exports.rleReport = function (eooArea, aooArea, aoo1pc, filename, bioPhysReducedSummary){
+ var out = ee.Feature(null).set({
+  'eoo': eooArea, 
+  'aooCount': aooArea.size(),
+  'aoo1pcCount': aoo1pc.size(),
+  'eooUnits': 'km2',
+  'fileName': filename,
+  'meanAnnualTemp': bioPhysReducedSummary.get('meanAnnualTemp'),//.multiply(0.1), //1
+  'meanDiurnalTempRange': bioPhysReducedSummary.get('meanDiurnalTempRange'), //2
+  'isothermality': bioPhysReducedSummary.get('isothermality'), //3
+  'tempSeasonality': bioPhysReducedSummary.get('tempSeasonality'),//4
+  'maxTempWarmestMonth': bioPhysReducedSummary.get('maxTempWarmestMonth'), //5
+  'minTempColdestMonth': bioPhysReducedSummary.get('minTempColdestMonth'), //6
+  'tempAnnualRange': bioPhysReducedSummary.get('tempAnnualRange'), //7
+  'meanTempWettestQtr': bioPhysReducedSummary.get('meanTempWettestQtr'),//8
+  'meanTempDriestQtr': bioPhysReducedSummary.get('meanTempDriestQtr'),//9
+  'meanTempWarmestQtr': bioPhysReducedSummary.get('meanTempWarmestQtr'), //10
+  'meanTempColdestQtr': bioPhysReducedSummary.get('meanTempColdestQtr'),//11
+  'annPrecipTotal': bioPhysReducedSummary.get('annPrecipTotal'),//12
+  'precipWettestMonth': bioPhysReducedSummary.get('precipWettestMonth'),//13
+  'precipDriestMonth': bioPhysReducedSummary.get('precipDriestMonth'),//14
+  'precipSeasonality': bioPhysReducedSummary.get('precipSeasonality'), //15
+  'precipWettestQtr': bioPhysReducedSummary.get('precipWettestQtr'), //16
+  'precipDriestQtr': bioPhysReducedSummary.get('precipDriestQtr'), //17
+  'precipWarmestQtr': bioPhysReducedSummary.get('precipWarmestQtr'), //18
+  'precipColdestQtr': bioPhysReducedSummary.get('precipColdestQtr'),
+  'nMonthsPreciplte100mm': bioPhysReducedSummary.get('nMonthsPreciplte100mm')//19
+ });
+ return out;
+}; 
+
+
+exports.runExports = function (classimg, geo, filename, folderOut){
+  // example: globFunctions.runExports(p2, aoi, 'p2_dry_decidous_forest', 'rangeMaps')
+  var eoo = exports.makeEOO(classimg, geo);
+  var eooArea = exports.eooArea(eoo);
+  var aoo = exports.makeAOO(classimg, geo);
+  var aooArea = exports.aooArea(aoo, classimg);
+  var aoo1pc = exports.aoo1pc(aooArea);
+  var rleDat = exports.rleData (eooArea, aooArea, aoo1pc, filename);
+  Export.table.toDrive({
+    collection: ee.FeatureCollection(aooArea), //
+    description: 'exportAOO',
+    folder: folderOut,
+    fileNamePrefix: filename.concat('_AOO'),
+    fileFormat: 'SHP'
+  });
+  Export.table.toDrive({
+    collection: ee.FeatureCollection(aoo1pc), //
+    description: 'exportAOO1pc',
+    folder: folderOut,
+    fileNamePrefix: filename.concat('_AOO1pc'),
+    fileFormat: 'SHP'
+  });
+  Export.table.toDrive({
+    collection: ee.FeatureCollection(eoo), //
+    description: 'exportEOO',
+    folder: folderOut,
+    fileNamePrefix: filename.concat('_EOO'),
+    fileFormat: 'SHP'
+  });
+  Export.table.toDrive({
+    collection: ee.FeatureCollection(rleDat), //
+    description: 'exportRLEDat',
+    folder: folderOut,
+    fileNamePrefix: filename.concat('_RLEDat'),
+    fileFormat: 'CSV'
+  });
+};
