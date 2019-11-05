@@ -1,6 +1,6 @@
 # Google Earth Engine - IUCN Red List
 
-Tools for the [IUCN Red List of Ecosystems](https://iucnrle.org) and [IUCN Red List of Threatened Species](https://www.iucnredlist.org) in Google Earth Engine.
+Tools for the [IUCN Red List of Ecosystems](https://iucnrle.org) and [IUCN Red List of Threatened Species](https://www.iucnredlist.org) in Google Earth Engine. Feel free to contribute to growing this module, with all contributions recognised accordingly. Get in contact with <nicholas.murray@jcu.edu.au>
 
 Functionality includes:
 
