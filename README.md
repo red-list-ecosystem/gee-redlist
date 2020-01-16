@@ -33,4 +33,4 @@ Please feel free to contribute!
 * Calvin Lee - Deakin University
 
 ## Cite as:
-Murray N.J., Wilshire, J., Duncan, A., Lee, C. (2019) GEE-redlist: Tools for the [IUCN Red List of Ecosystems](https://iucnrle.org) and [IUCN Red List of Threatened Species](https://www.iucnredlist.org) in Google Earth Engine. Version 0.0.1
+Murray N.J., Wilshire, J., Duncan, A., Lee, C. (2020) GEE-redlist: Tools for the [IUCN Red List of Ecosystems](https://iucnrle.org) and [IUCN Red List of Threatened Species](https://www.iucnredlist.org) in Google Earth Engine. Version 0.0.1
