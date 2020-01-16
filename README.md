@@ -11,6 +11,8 @@ Functionality includes:
 * Export a red list report
 * Climatic and topographic summaries of ecosystems
 
+Please also see the R package [Redlistr](https://cran.r-project.org/package=redlistr)
+
 ## Instructions
 
 This is a [Google Earth Engine](https://earthengine.google.com/) module. 
@@ -22,6 +24,8 @@ print('Time now:', rleFunctions.getTime); // call an RLE function
 ```
 
 ## Contributors:
+
+Please feel free to contribute! 
 
 * Nicholas Murray - James Cook University - [Website](https://www.murrayensis.org)
 * John Wilshire - Yale University
